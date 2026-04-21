@@ -10,6 +10,7 @@
 - 环境检查脚本：`tools/check_server_environment.py`
 - 默认输出目录：`output/plantseg_swin_base_4090`
 - 默认测试 mask 导出目录：`output/plantseg_swin_base_4090/test_masks`
+- 默认本地 BERT 目录：`models/plantseg/bert-base-uncased`
 
 ## 数据约定
 
@@ -19,6 +20,7 @@
 - 使用 `caption[3]` 作为唯一文本描述
 - 使用 `mask` 作为唯一监督 mask
 - 忽略所有带 `false_healthy_ann` 的样本
+- 文本编码器优先读取 `models/plantseg/bert-base-uncased`，找不到时才回退到 `bert-base-uncased`
 
 ## 服务器端流程
 

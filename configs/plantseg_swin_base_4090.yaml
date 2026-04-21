@@ -1,5 +1,8 @@
 _BASE_: referring_swin_base.yaml
 
+REFERRING:
+  BERT_TYPE: "models/plantseg/bert-base-uncased"
+
 MODEL:
   WEIGHTS: "models/plantseg/swin_base_patch4_window12_384_22k.pkl"
   SWIN:

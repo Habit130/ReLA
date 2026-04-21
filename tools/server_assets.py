@@ -8,6 +8,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODELS_ROOT = REPO_ROOT / "models" / "plantseg"
+DEFAULT_BERT_DIR = MODELS_ROOT / "bert-base-uncased"
 
 SWIN_SPECS = {
     "swin_base_patch4_window12_384_22k.pkl": {
@@ -26,6 +27,18 @@ def resolve_repo_path(path_like):
     if path.is_absolute():
         return path
     return REPO_ROOT / path
+
+
+def resolve_bert_source(model_name):
+    preferred_local = DEFAULT_BERT_DIR
+    if preferred_local.exists():
+        return str(preferred_local)
+
+    candidate = resolve_repo_path(model_name)
+    if candidate.exists():
+        return str(candidate)
+
+    return model_name
 
 
 def download_file(url, destination):
@@ -72,8 +85,10 @@ def ensure_swin_weights(model_weights):
 def ensure_bert_assets(model_name):
     from transformers import BertModel, BertTokenizer
 
-    BertTokenizer.from_pretrained(model_name)
-    BertModel.from_pretrained(model_name)
+    resolved_model_name = resolve_bert_source(model_name)
+    BertTokenizer.from_pretrained(resolved_model_name)
+    BertModel.from_pretrained(resolved_model_name)
+    return resolved_model_name
 
 
 def build_msdeformattn():
@@ -83,10 +98,10 @@ def build_msdeformattn():
 
 def ensure_runtime_assets(model_weights, bert_type, build_op=False):
     resolved_weights = ensure_swin_weights(model_weights)
-    ensure_bert_assets(bert_type)
+    resolved_bert = ensure_bert_assets(bert_type)
     if build_op:
         build_msdeformattn()
-    return resolved_weights
+    return resolved_weights, resolved_bert
 
 
 def default_plantseg_root():

@@ -15,7 +15,7 @@ def parse_args():
     )
     parser.add_argument(
         "--bert-type",
-        default="bert-base-uncased",
+        default="models/plantseg/bert-base-uncased",
         help="Hugging Face model id used by the tokenizer and text encoder.",
     )
     parser.add_argument(
@@ -40,9 +40,9 @@ def main():
         print(f"build_op={args.build_op}")
         return
 
-    resolved = ensure_runtime_assets(args.model_weights, args.bert_type, build_op=False)
-    print(f"prepared_model_weights={resolved}")
-    print(f"prepared_bert_type={args.bert_type}")
+    resolved_weights, resolved_bert = ensure_runtime_assets(args.model_weights, args.bert_type, build_op=False)
+    print(f"prepared_model_weights={resolved_weights}")
+    print(f"prepared_bert_type={resolved_bert}")
     if args.build_op:
         build_msdeformattn()
         print("built_msdeformattn=true")
