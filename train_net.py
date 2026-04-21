@@ -14,6 +14,7 @@ except:
 import copy
 import itertools
 import logging
+import math
 import os
 
 from functools import reduce
@@ -28,11 +29,12 @@ import torch.utils.data as torchdata
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
-from detectron2.data import MetadataCatalog, build_detection_train_loader, build_detection_test_loader
+from detectron2.data import DatasetCatalog, MetadataCatalog, build_detection_test_loader, build_detection_train_loader
 from detectron2.engine import (
     DefaultTrainer,
     default_argument_parser,
     default_setup,
+    hooks,
     launch,
 )
 from detectron2.evaluation import DatasetEvaluators, verify_results
@@ -43,14 +45,76 @@ from detectron2.utils.logger import setup_logger
 
 # MaskFormer
 from gres_model import (
+    PlantSegEvaluator,
+    PlantSegMapper,
     RefCOCOMapper,
     ReferEvaluator,
     add_maskformer2_config,
     add_refcoco_config
 )
+from tools.server_assets import ensure_swin_weights
+
+
+class BestMetricCheckpointer(hooks.HookBase):
+    def __init__(self, checkpointer, metric_name, mode="max", file_prefix="model_best"):
+        self._checkpointer = checkpointer
+        self._metric_name = metric_name
+        self._mode = mode
+        self._file_prefix = file_prefix
+        self._best_metric = None
+        self._best_iter = None
+        self._logger = logging.getLogger(__name__)
+
+    def _is_better(self, metric_value):
+        if self._best_metric is None:
+            return True
+        if self._mode == "min":
+            return metric_value < self._best_metric
+        return metric_value > self._best_metric
+
+    def after_step(self):
+        next_iter = self.trainer.iter + 1
+        is_final = next_iter == self.trainer.max_iter
+        if self.trainer.cfg.TEST.EVAL_PERIOD <= 0:
+            return
+        if not is_final and next_iter % self.trainer.cfg.TEST.EVAL_PERIOD != 0:
+            return
+
+        latest_metrics = self.trainer.storage.latest()
+        if self._metric_name not in latest_metrics:
+            self._logger.warning("Metric %s not found in storage after evaluation.", self._metric_name)
+            return
+
+        metric_value = latest_metrics[self._metric_name][0]
+        if not self._is_better(metric_value):
+            return
+
+        self._best_metric = metric_value
+        self._best_iter = next_iter
+        self.trainer.storage.put_scalar("best_metric", metric_value, smoothing_hint=False)
+        self._checkpointer.save(
+            self._file_prefix,
+            iteration=next_iter,
+            best_metric_name=self._metric_name,
+            best_metric_value=metric_value,
+        )
+        self._logger.info(
+            "Saved %s at iteration %d with %s=%.6f",
+            self._file_prefix,
+            next_iter,
+            self._metric_name,
+            metric_value,
+        )
 
 
 class Trainer(DefaultTrainer):
+    @classmethod
+    def _build_mapper(cls, cfg, is_train):
+        if cfg.INPUT.DATASET_MAPPER_NAME == "refcoco":
+            return RefCOCOMapper(cfg, is_train)
+        if cfg.INPUT.DATASET_MAPPER_NAME == "plantseg":
+            return PlantSegMapper(cfg, is_train)
+        raise NotImplementedError(f"Unsupported dataset mapper {cfg.INPUT.DATASET_MAPPER_NAME}")
 
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
@@ -58,30 +122,63 @@ class Trainer(DefaultTrainer):
             output_folder = os.path.join(cfg.OUTPUT_DIR, "inference")
             os.makedirs(output_folder, exist_ok=True)
         evaluator_list = []
-        evaluator_list.append(
-            ReferEvaluator(
-                dataset_name,
-                distributed=True,
-                output_dir=output_folder,
+        metadata = MetadataCatalog.get(dataset_name)
+        evaluator_type = metadata.get("evaluator_type")
+
+        if evaluator_type == "refer":
+            evaluator_list.append(
+                ReferEvaluator(
+                    dataset_name,
+                    distributed=True,
+                    output_dir=output_folder,
+                )
             )
-        )
+        elif evaluator_type == "plantseg":
+            evaluator_list.append(
+                PlantSegEvaluator(
+                    dataset_name,
+                    distributed=True,
+                    output_dir=output_folder,
+                    save_masks=cfg.TEST.SAVE_PREDICTION_MASKS and metadata.get("split") == "test",
+                    mask_subdir=cfg.TEST.PREDICTION_MASK_DIR,
+                )
+            )
+        else:
+            raise NotImplementedError(f"No evaluator for dataset {dataset_name} with type {evaluator_type}")
+
         return DatasetEvaluators(evaluator_list)
 
     @classmethod
     def build_train_loader(cls, cfg):
-        assert cfg.INPUT.DATASET_MAPPER_NAME == "refcoco"
-        mapper = RefCOCOMapper(cfg, True)
+        mapper = cls._build_mapper(cfg, True)
         return build_detection_train_loader(cfg, mapper=mapper)
 
     @classmethod
     def build_test_loader(cls, cfg, dataset_name):
-        assert cfg.INPUT.DATASET_MAPPER_NAME == "refcoco"
-        mapper = RefCOCOMapper(cfg, False)
+        mapper = cls._build_mapper(cfg, False)
         return build_detection_test_loader(cfg, dataset_name, mapper=mapper)
 
     @classmethod
     def build_lr_scheduler(cls, cfg, optimizer):
         return build_lr_scheduler(cfg, optimizer)
+
+    def build_hooks(self):
+        trainer_hooks = super().build_hooks()
+        if not self.cfg.TEST.BEST_METRIC:
+            return trainer_hooks
+
+        for index, current_hook in enumerate(trainer_hooks):
+            if isinstance(current_hook, hooks.EvalHook):
+                trainer_hooks.insert(
+                    index + 1,
+                    BestMetricCheckpointer(
+                        self.checkpointer,
+                        self.cfg.TEST.BEST_METRIC,
+                        mode=self.cfg.TEST.BEST_MODE,
+                    ),
+                )
+                break
+        return trainer_hooks
 
     @classmethod
     def build_optimizer(cls, cfg, model):
@@ -185,10 +282,37 @@ def setup(args):
     add_refcoco_config(cfg)
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
+    _apply_epoch_schedule(cfg)
+    _ensure_model_weights(cfg)
     cfg.freeze()
     default_setup(cfg, args)
     setup_logger(output=cfg.OUTPUT_DIR, distributed_rank=comm.get_rank(), name="referring")
     return cfg
+
+
+def _apply_epoch_schedule(cfg):
+    if cfg.SOLVER.MAX_EPOCHS <= 0:
+        return
+
+    train_dataset = DatasetCatalog.get(cfg.DATASETS.TRAIN[0])
+    steps_per_epoch = max(1, math.ceil(len(train_dataset) / cfg.SOLVER.IMS_PER_BATCH))
+    cfg.defrost()
+    cfg.SOLVER.STEPS_PER_EPOCH = steps_per_epoch
+    cfg.SOLVER.MAX_ITER = steps_per_epoch * cfg.SOLVER.MAX_EPOCHS
+    if cfg.SOLVER.EPOCH_MILESTONES:
+        cfg.SOLVER.STEPS = tuple(int(steps_per_epoch * epoch) for epoch in cfg.SOLVER.EPOCH_MILESTONES)
+    if cfg.TEST.EVAL_PERIOD_EPOCHS > 0:
+        cfg.TEST.EVAL_PERIOD = int(steps_per_epoch * cfg.TEST.EVAL_PERIOD_EPOCHS)
+    if cfg.SOLVER.CHECKPOINT_PERIOD_EPOCHS > 0:
+        cfg.SOLVER.CHECKPOINT_PERIOD = int(steps_per_epoch * cfg.SOLVER.CHECKPOINT_PERIOD_EPOCHS)
+
+
+def _ensure_model_weights(cfg):
+    resolved_weights = ensure_swin_weights(cfg.MODEL.WEIGHTS)
+    if resolved_weights == cfg.MODEL.WEIGHTS:
+        return
+    cfg.defrost()
+    cfg.MODEL.WEIGHTS = resolved_weights
 
 
 def main(args):

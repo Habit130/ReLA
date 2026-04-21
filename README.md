@@ -10,6 +10,10 @@ This repository contains code for **CVPR2023** paper:
 > Chang Liu, Henghui Ding, Xudong Jiang  
 > CVPR 2023 Highlight, Acceptance Rate 2.5%
 
+## Server Delivery
+
+For the Linux single-GPU `plantseg` delivery described in this workspace, use the server runbook in `SERVER.md`.
+
 
 <div align="center">
   <img src="https://github.com/henghuiding/ReLA/blob/main/imgs/fig1.png?raw=true" width="100%" height="100%"/>

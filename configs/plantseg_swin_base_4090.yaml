@@ -1,0 +1,33 @@
+_BASE_: referring_swin_base.yaml
+
+MODEL:
+  WEIGHTS: "models/plantseg/swin_base_patch4_window12_384_22k.pkl"
+  SWIN:
+    USE_CHECKPOINT: True
+
+DATASETS:
+  TRAIN: ("plantseg_train",)
+  TEST: ("plantseg_val",)
+
+INPUT:
+  DATASET_MAPPER_NAME: "plantseg"
+  IMAGE_SIZE: 1024
+
+DATALOADER:
+  NUM_WORKERS: 4
+
+SOLVER:
+  IMS_PER_BATCH: 2
+  BASE_LR: 0.0000004166666667
+  MAX_EPOCHS: 50
+  EPOCH_MILESTONES: [37, 47]
+  CHECKPOINT_PERIOD_EPOCHS: 1
+
+TEST:
+  EVAL_PERIOD_EPOCHS: 1
+  BEST_METRIC: "plantseg/IoU"
+  BEST_MODE: "max"
+  SAVE_PREDICTION_MASKS: True
+  PREDICTION_MASK_DIR: "test_masks"
+
+OUTPUT_DIR: "output/plantseg_swin_base_4090"

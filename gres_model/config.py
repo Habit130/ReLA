@@ -127,3 +127,14 @@ def add_refcoco_config(cfg):
     cfg.REFERRING = CN()
     cfg.REFERRING.BERT_TYPE = "bert-base-uncased"
     cfg.REFERRING.MAX_TOKENS = 20
+
+    cfg.SOLVER.MAX_EPOCHS = 0
+    cfg.SOLVER.EPOCH_MILESTONES = []
+    cfg.SOLVER.CHECKPOINT_PERIOD_EPOCHS = 0
+    cfg.SOLVER.STEPS_PER_EPOCH = 0
+
+    cfg.TEST.EVAL_PERIOD_EPOCHS = 0
+    cfg.TEST.BEST_METRIC = ""
+    cfg.TEST.BEST_MODE = "max"
+    cfg.TEST.SAVE_PREDICTION_MASKS = True
+    cfg.TEST.PREDICTION_MASK_DIR = "test_masks"
