@@ -1,6 +1,6 @@
 # Linux Server Runbook
 
-本仓库已按单卡 RTX 4090、CUDA 11.8、Python 3.10、Miniconda 目标完成 `plantseg` 适配。默认数据位置固定为仓库同级 `../plantseg`，文本固定使用 `caption[2]`，训练总轮数固定为 50 epoch。
+本仓库已按单卡 RTX 4090、CUDA 11.8、Python 3.10、Miniconda 目标完成 `plantseg` 适配。默认数据位置固定为仓库同级 `../plantseg`，文本固定使用 `caption[3]`，训练总轮数固定为 50 epoch。
 
 ## 目录与产物
 
@@ -16,7 +16,7 @@
 - 数据根目录默认是 `../plantseg`
 - 注释文件固定为 `../plantseg/main.json`
 - 使用 `split` 字段注册 `plantseg_train`、`plantseg_val`、`plantseg_test`
-- 使用 `caption[2]` 作为唯一文本描述
+- 使用 `caption[3]` 作为唯一文本描述
 - 使用 `mask` 作为唯一监督 mask
 - 忽略所有带 `false_healthy_ann` 的样本
 

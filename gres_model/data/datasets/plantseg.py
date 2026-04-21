@@ -4,7 +4,7 @@ import os
 from detectron2.utils.file_io import PathManager
 
 
-def load_plantseg_json(dataset_root, split, caption_index=2, ignore_false_healthy=True):
+def load_plantseg_json(dataset_root, split, caption_index=3, ignore_false_healthy=True):
     json_file = os.path.join(dataset_root, "main.json")
     json_file = PathManager.get_local_path(json_file)
 

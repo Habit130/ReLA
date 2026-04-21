@@ -11,7 +11,7 @@ def _default_plantseg_root():
     )
 
 
-def register_plantseg(root=None, caption_index=2, ignore_false_healthy=True):
+def register_plantseg(root=None, caption_index=3, ignore_false_healthy=True):
     root = os.path.abspath(root or os.getenv("PLANTSEG_ROOT", _default_plantseg_root()))
     json_file = os.path.join(root, "main.json")
 
